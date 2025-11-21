@@ -3,5 +3,6 @@ requests
 httpx
 python-dotenv
 pypdf2
+pypdf
 tiktoken
 apscheduler
