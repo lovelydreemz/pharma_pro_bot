@@ -2,12 +2,10 @@ import logging
 import os
 from functools import wraps
 from io import BytesIO
-from datetime import datetime
 
 from telegram import (
     Update,
     ReplyKeyboardMarkup,
-    ReplyKeyboardRemove,
 )
 from telegram.ext import (
     Updater,
@@ -15,7 +13,6 @@ from telegram.ext import (
     MessageHandler,
     Filters,
     CallbackContext,
-    ConversationHandler,
 )
 
 from config import TELEGRAM_BOT_TOKEN, ADMIN_IDS, BOOKS_FOLDER, PENDING_PDFS_FOLDER, BOT_NAME
@@ -29,7 +26,6 @@ from database import (
     get_document,
     set_user_premium,
     set_user_admin,
-    get_all_users,
     list_users_by_premium,
     list_online_users,
 )
@@ -87,11 +83,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # In-memory state
-USER_MODE = {}     # e.g. "ask", "sop", "uploadpdf", "voice"
+USER_MODE = {}     # chat_id -> "ask", "sop", "uploadpdf", "voice"
 ADMIN_EXPECT = {}  # chat_id -> "view_pdf_id" / "approve_pdf_id" / "add_admin_id"
 
 # ==========================================================
-# UPDATED MAIN MENU
+# MAIN & ADMIN MENUS
 # ==========================================================
 MAIN_MENU = [
     ["📚 Ask Question", "🧾 SOP Generator"],
@@ -139,7 +135,7 @@ def _build_main_keyboard(chat_id: int) -> ReplyKeyboardMarkup:
 
 
 # ==========================================================
-# START / HELP / MENU COMMANDS
+# START / HELP / BASIC COMMANDS
 # ==========================================================
 def start(update: Update, context: CallbackContext):
     user = update.effective_user
@@ -186,9 +182,6 @@ def help_cmd(update: Update, context: CallbackContext):
     update.message.reply_text(text)
 
 
-# ==========================================================
-# EXISTING COMMANDS: SUBSCRIPTION / Q&A / SOP / ALERTS
-# ==========================================================
 def subscription_cmd(update: Update, context: CallbackContext):
     user = update.effective_user
     db_user = get_or_create_user(user.id, user.username, user.full_name)
@@ -235,11 +228,10 @@ def voice_mode_cmd(update: Update, context: CallbackContext):
 
 
 # ==========================================================
-# ADMIN PANEL COMMAND
+# ADMIN PANEL
 # ==========================================================
 @admin_only
 def admin_menu_cmd(update: Update, context: CallbackContext):
-    """Show admin-only keyboard."""
     chat_id = update.effective_user.id
     ADMIN_EXPECT.pop(chat_id, None)
     keyboard = ReplyKeyboardMarkup(ADMIN_MENU, resize_keyboard=True)
@@ -247,7 +239,9 @@ def admin_menu_cmd(update: Update, context: CallbackContext):
 
 
 # ==========================================================
-# MENU BUTTON HANDLER (ONLY SIMPLE MENU / ADMIN, NOT QA FLOWS)
+# MENU BUTTON HANDLER
+#  - Handles simple modes only
+#  - DOES NOT manually start MOA/Deviation/CAPA/CC/Artwork (ConversationHandlers do that)
 # ==========================================================
 def _handle_menu_buttons(update: Update, context: CallbackContext) -> bool:
     text = (update.message.text or "").strip()
@@ -274,12 +268,12 @@ def _handle_menu_buttons(update: Update, context: CallbackContext) -> bool:
         return True
 
     # ⚠️ IMPORTANT:
-    # DO NOT handle these here:
-    # "📄 Deviation", "🧪 Method of Analysis", "🛡 CAPA",
-    # "⚙ Change Control", "🖼 Artwork Review"
-    # Those are triggered by ConversationHandlers via regex / commands.
+    # Do NOT manually handle:
+    # "📄 Deviation", "🧪 Method of Analysis",
+    # "🛡 CAPA", "⚙ Change Control", "🖼 Artwork Review"
+    # These must be matched by ConversationHandlers via regex/commands.
 
-    # ADMIN BUTTONS
+    # ADMIN MENU
     if text == "🛠 Admin Panel" and _is_admin_user(user_id):
         admin_menu_cmd(update, context)
         return True
@@ -287,38 +281,30 @@ def _handle_menu_buttons(update: Update, context: CallbackContext) -> bool:
     if not _is_admin_user(user_id):
         return False
 
-    # Admin actions
     if text == "📂 Pending PDFs":
         pending_pdfs_cmd(update, context)
         return True
-
     if text == "👁 View PDF":
         ADMIN_EXPECT[user_id] = "view_pdf_id"
         update.message.reply_text("Send PDF ID.")
         return True
-
     if text == "✔ Approve PDF":
         ADMIN_EXPECT[user_id] = "approve_pdf_id"
         update.message.reply_text("Send PDF ID to approve.")
         return True
-
     if text == "👥 Online Users":
         admin_online_users_cmd(update, context)
         return True
-
     if text == "✅ Subscribed Users":
         admin_subscribed_users_cmd(update, context)
         return True
-
     if text == "🚫 Free Users":
         admin_free_users_cmd(update, context)
         return True
-
     if text == "➕ Add Admin":
         ADMIN_EXPECT[user_id] = "add_admin_id"
         update.message.reply_text("Send chat_id to grant admin.")
         return True
-
     if text == "⬅️ Back to User Menu":
         start(update, context)
         return True
@@ -333,11 +319,11 @@ def text_message(update: Update, context: CallbackContext):
     user = update.effective_user
     message_text = (update.message.text or "").strip()
 
-    # 1) Handle menu buttons first
+    # 1) Handle menu buttons
     if _handle_menu_buttons(update, context):
         return
 
-    # 2) Handle admin expectations (ID entry)
+    # 2) Admin flows expecting IDs
     admin_mode = ADMIN_EXPECT.get(user.id)
     if admin_mode and _is_admin_user(user.id):
         if admin_mode == "view_pdf_id":
@@ -369,11 +355,11 @@ def text_message(update: Update, context: CallbackContext):
             ADMIN_EXPECT.pop(user.id, None)
             return
 
-    # 3) Allow /commands to go to CommandHandlers / ConversationHandlers
+    # 3) Let /commands go to CommandHandlers / ConversationHandlers
     if message_text.startswith("/"):
         return
 
-    # 4) MAIN ENGINE (Ask / SOP)
+    # 4) Main Q&A / SOP engine
     db_user = get_or_create_user(user.id, user.username, user.full_name)
     allowed, msg = can_user_ask(db_user)
     if not allowed:
@@ -408,7 +394,7 @@ def text_message(update: Update, context: CallbackContext):
 
 
 # ==========================================================
-# 📤 PDF UPLOAD HANDLER
+# PDF UPLOAD HANDLER
 # ==========================================================
 def document_handler(update: Update, context: CallbackContext):
     user = update.effective_user
@@ -453,7 +439,7 @@ def document_handler(update: Update, context: CallbackContext):
 
 
 # ==========================================================
-# 🎙 VOICE HANDLER
+# VOICE HANDLER
 # ==========================================================
 def voice_handler(update: Update, context: CallbackContext):
     user = update.effective_user
@@ -491,7 +477,7 @@ def voice_handler(update: Update, context: CallbackContext):
 
 
 # ==========================================================
-# 📂 ADMIN LIST FUNCTIONS
+# ADMIN: PDF LISTING / VIEW / APPROVE
 # ==========================================================
 @admin_only
 def pending_pdfs_cmd(update: Update, context: CallbackContext):
@@ -511,20 +497,6 @@ def pending_pdfs_cmd(update: Update, context: CallbackContext):
         update.message.reply_document(bio)
 
 
-@admin_only
-def view_pdf_cmd(update: Update, context: CallbackContext):
-    parts = (update.message.text or "").split()
-    if len(parts) < 2:
-        update.message.reply_text("Usage: /view_pdf <id>")
-        return
-
-    try:
-        doc_id = int(parts[1])
-        _admin_view_pdf_by_id(update, context, doc_id)
-    except Exception:
-        update.message.reply_text("Invalid ID")
-
-
 def _admin_view_pdf_by_id(update: Update, context: CallbackContext, doc_id: int):
     d = get_document(doc_id)
     if not d:
@@ -540,6 +512,20 @@ def _admin_view_pdf_by_id(update: Update, context: CallbackContext, doc_id: int)
 
     with open(path, "rb") as f:
         update.message.reply_document(f, filename=d["filename"])
+
+
+@admin_only
+def view_pdf_cmd(update: Update, context: CallbackContext):
+    parts = (update.message.text or "").split()
+    if len(parts) < 2:
+        update.message.reply_text("Usage: /view_pdf <id>")
+        return
+
+    try:
+        doc_id = int(parts[1])
+        _admin_view_pdf_by_id(update, context, doc_id)
+    except Exception:
+        update.message.reply_text("Invalid ID")
 
 
 @admin_only
@@ -626,7 +612,8 @@ def _send_users_as_html(update: Update, title: str, rows):
         "<html><body>",
         f"<h2>{title}</h2>",
         "<table border='1' cellspacing='0' cellpadding='4'>",
-        "<tr><th>ID</th><th>Chat ID</th><th>Username</th><th>Name</th><th>Premium</th><th>Admin</th><th>Last Seen</th></tr>",
+        "<tr><th>ID</th><th>Chat ID</th><th>Username</th><th>Name</th>"
+        "<th>Premium</th><th>Admin</th><th>Last Seen</th></tr>",
     ]
     for u in rows:
         html.append(
@@ -664,7 +651,7 @@ def main():
     updater = Updater(TELEGRAM_BOT_TOKEN, use_context=True)
     dp = updater.dispatcher
 
-    # COMMANDS
+    # BASIC COMMANDS
     dp.add_handler(CommandHandler("start", start))
     dp.add_handler(CommandHandler("help", help_cmd))
     dp.add_handler(CommandHandler("subscription", subscription_cmd))
@@ -674,6 +661,8 @@ def main():
     dp.add_handler(CommandHandler("uploadpdf", uploadpdf_cmd))
     dp.add_handler(CommandHandler("voice", voice_mode_cmd))
     dp.add_handler(CommandHandler("admin", admin_menu_cmd))
+
+    # ADMIN COMMANDS
     dp.add_handler(CommandHandler("pending_pdfs", pending_pdfs_cmd))
     dp.add_handler(CommandHandler("approve_pdf", approve_pdf_cmd))
     dp.add_handler(CommandHandler("view_pdf", view_pdf_cmd))
