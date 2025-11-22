@@ -40,7 +40,7 @@ from voice_handler import transcribe_voice
 from pdf_approval import save_pending_pdf, approve_pending_pdf
 
 # ==========================================================
-# NEW IMPORTS (handlers with ConversationHandler objects)
+# NEW IMPORTS (conversation handlers)
 # ==========================================================
 try:
     from handlers.moa_handler import moa_conv
@@ -49,7 +49,6 @@ try:
     from handlers.changecontrol_handler import cc_conv
     from handlers.artwork_handler import artwork_conv
 except Exception:
-    # Placeholders if actual files not yet created
     moa_conv = None
     deviation_conv = None
     capa_conv = None
@@ -64,8 +63,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # In-memory state
-USER_MODE = {}
-ADMIN_EXPECT = {}
+USER_MODE = {}   # chat_id -> "ask" / "sop" / "uploadpdf" / "voice"
+ADMIN_EXPECT = {}  # chat_id -> "view_pdf_id" / "approve_pdf_id" / "add_admin_id"
 
 # ==========================================================
 # UPDATED MAIN MENU
@@ -89,9 +88,6 @@ ADMIN_MENU = [
 ]
 
 
-# ==========================================================
-# ADMIN HELPERS
-# ==========================================================
 def _is_admin_user(chat_id: int) -> bool:
     db_user = get_user_by_chat_id(chat_id)
     db_flag = bool(db_user and db_user["is_admin"])
@@ -105,7 +101,6 @@ def admin_only(func):
             update.message.reply_text("Only admins can use this command.")
             return
         return func(update, context, *args, **kwargs)
-
     return wrapper
 
 
@@ -165,18 +160,6 @@ def help_cmd(update: Update, context: CallbackContext):
 
 
 # ==========================================================
-# ADMIN MENU COMMAND
-# ==========================================================
-@admin_only
-def admin_menu_cmd(update: Update, context: CallbackContext):
-    """Show admin-only keyboard."""
-    chat_id = update.effective_user.id
-    ADMIN_EXPECT.pop(chat_id, None)
-    keyboard = ReplyKeyboardMarkup(ADMIN_MENU, resize_keyboard=True)
-    update.message.reply_text("🛠 Admin Panel:", reply_markup=keyboard)
-
-
-# ==========================================================
 # EXISTING COMMANDS: SUBSCRIPTION / Q&A / SOP / ALERTS
 # ==========================================================
 def subscription_cmd(update: Update, context: CallbackContext):
@@ -225,36 +208,54 @@ def voice_mode_cmd(update: Update, context: CallbackContext):
 
 
 # ==========================================================
-# 🎯 MENU BUTTON HANDLING (USER + ADMIN)
-#   NOTE: QA modules (MOA/Deviation/CAPA/CC/Artwork) are now
-#   handled by their own ConversationHandlers via entry_points,
-#   so we DO NOT call start_moa/start_deviation/etc here.
+# ADMIN MENU COMMAND
+# ==========================================================
+@admin_only
+def admin_menu_cmd(update: Update, context: CallbackContext):
+    chat_id = update.effective_user.id
+    ADMIN_EXPECT.pop(chat_id, None)
+    keyboard = ReplyKeyboardMarkup(ADMIN_MENU, resize_keyboard=True)
+    update.message.reply_text("🛠 Admin Panel:", reply_markup=keyboard)
+
+
+# ==========================================================
+# 🎯 MENU BUTTON HANDLER (ONLY SIMPLE ACTIONS HERE)
 # ==========================================================
 def _handle_menu_buttons(update: Update, context: CallbackContext) -> bool:
     text = (update.message.text or "").strip()
+    user_id = update.effective_user.id
 
-    # USER MENU
+    # USER MENU (simple mode switches)
     if text == "📚 Ask Question":
         ask_cmd(update, context)
         return True
+
     if text == "🧾 SOP Generator":
         sop_cmd(update, context)
         return True
+
     if text == "🚨 Regulatory Alerts":
         alerts_cmd(update, context)
         return True
+
     if text == "📤 Upload PDF":
         uploadpdf_cmd(update, context)
         return True
+
     if text == "🎙 Voice Q&A":
         voice_mode_cmd(update, context)
         return True
+
     if text == "💳 Subscription Status":
         subscription_cmd(update, context)
         return True
 
-    # Admin buttons
-    user_id = update.effective_user.id
+    # IMPORTANT:
+    # Do NOT manually call start_moa / start_deviation / etc here.
+    # The ConversationHandlers will capture these button texts
+    # via Filters.regex entry_points in their own files.
+
+    # ADMIN BUTTONS
     if text == "🛠 Admin Panel" and _is_admin_user(user_id):
         admin_menu_cmd(update, context)
         return True
@@ -262,30 +263,38 @@ def _handle_menu_buttons(update: Update, context: CallbackContext) -> bool:
     if not _is_admin_user(user_id):
         return False
 
+    # Admin actions
     if text == "📂 Pending PDFs":
         pending_pdfs_cmd(update, context)
         return True
+
     if text == "👁 View PDF":
         ADMIN_EXPECT[user_id] = "view_pdf_id"
         update.message.reply_text("Send PDF ID.")
         return True
+
     if text == "✔ Approve PDF":
         ADMIN_EXPECT[user_id] = "approve_pdf_id"
         update.message.reply_text("Send PDF ID to approve.")
         return True
+
     if text == "👥 Online Users":
         admin_online_users_cmd(update, context)
         return True
+
     if text == "✅ Subscribed Users":
         admin_subscribed_users_cmd(update, context)
         return True
+
     if text == "🚫 Free Users":
         admin_free_users_cmd(update, context)
         return True
+
     if text == "➕ Add Admin":
         ADMIN_EXPECT[user_id] = "add_admin_id"
         update.message.reply_text("Send chat_id to grant admin.")
         return True
+
     if text == "⬅️ Back to User Menu":
         start(update, context)
         return True
@@ -294,7 +303,7 @@ def _handle_menu_buttons(update: Update, context: CallbackContext) -> bool:
 
 
 # ==========================================================
-# TEXT MESSAGE HANDLER (CORE Q&A + SOP)
+# TEXT MESSAGE HANDLER
 # ==========================================================
 def text_message(update: Update, context: CallbackContext):
     user = update.effective_user
@@ -336,7 +345,7 @@ def text_message(update: Update, context: CallbackContext):
             ADMIN_EXPECT.pop(user.id, None)
             return
 
-    # 3) Allow /commands to go to CommandHandlers / ConversationHandlers
+    # 3) Allow /commands to go to CommandHandlers
     if message_text.startswith("/"):
         return
 
@@ -593,7 +602,8 @@ def _send_users_as_html(update: Update, title: str, rows):
         "<html><body>",
         f"<h2>{title}</h2>",
         "<table border='1' cellspacing='0' cellpadding='4'>",
-        "<tr><th>ID</th><th>Chat ID</th><th>Username</th><th>Name</th><th>Premium</th><th>Admin</th><th>Last Seen</th></tr>",
+        "<tr><th>ID</th><th>Chat ID</th><th>Username</th><th>Name</th>"
+        "<th>Premium</th><th>Admin</th><th>Last Seen</th></tr>",
     ]
     for u in rows:
         html.append(
@@ -621,7 +631,6 @@ def _send_users_as_html(update: Update, title: str, rows):
 def main():
     init_db()
 
-    # Ensure config.ADMIN_IDS are admins in DB
     for cid in ADMIN_IDS:
         try:
             set_user_admin(cid, True)
@@ -647,7 +656,7 @@ def main():
     dp.add_handler(CommandHandler("activate_user", activate_user_cmd))
     dp.add_handler(CommandHandler("add_admin", add_admin_cmd))
 
-    # NEW QA FEATURE HANDLERS (they contain their own entry_points)
+    # NEW QA FEATURE CONVERSATION HANDLERS
     if moa_conv:
         dp.add_handler(moa_conv)
     if deviation_conv:
@@ -663,7 +672,7 @@ def main():
     dp.add_handler(MessageHandler(Filters.document, document_handler))
     dp.add_handler(MessageHandler(Filters.voice | Filters.audio, voice_handler))
 
-    # TEXT (fallback after conversation handlers)
+    # TEXT (fallback)
     dp.add_handler(MessageHandler(Filters.text & ~Filters.command, text_message))
 
     updater.start_polling()
