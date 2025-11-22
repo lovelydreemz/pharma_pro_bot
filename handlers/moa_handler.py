@@ -172,6 +172,7 @@ def moa_validation(update: Update, context: CallbackContext):
     return MOA_SAFETY
 
 
+# ===== FINAL STEP: BUILD HTML AND SEND =====
 def moa_safety(update: Update, context: CallbackContext):
     context.user_data["moa"]["safety_precautions"] = update.message.text.strip()
 
@@ -194,7 +195,6 @@ def moa_safety(update: Update, context: CallbackContext):
 moa_conv = ConversationHandler(
     entry_points=[
         CommandHandler("moa", start_moa),
-        # Triggered by menu button "🧪 Method of Analysis"
         MessageHandler(Filters.regex(r"^🧪 Method of Analysis$"), start_moa),
     ],
     states={
