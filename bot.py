@@ -91,7 +91,8 @@ ADMIN_MENU = [
 
 def _is_admin_user(chat_id: int) -> bool:
     db_user = get_user_by_chat_id(chat_id)
-    db_flag = bool(db_user and db_user.get("is_admin"))
+    # FIX: sqlite3.Row does not support .get(), use dict-style index
+    db_flag = bool(db_user and db_user["is_admin"])
     return (chat_id in ADMIN_IDS) or db_flag
 
 
