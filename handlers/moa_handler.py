@@ -10,7 +10,7 @@ from telegram.ext import (
 )
 from io import BytesIO
 
-from modules.method_of_analysis import MethodOfAnalysisInput, generate_moa_html
+from method_of_analysis import MethodOfAnalysisInput, generate_moa_html
 
 # ===== STATES =====
 (
