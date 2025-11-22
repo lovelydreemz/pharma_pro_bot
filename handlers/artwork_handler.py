@@ -12,14 +12,19 @@ from telegram.ext import (
     Filters,
 )
 
-from artwork_review import run_artwork_review  # your B3 module
+# Your B3 comparison engine
+from artwork_review import run_artwork_review
 
-# Conversation states
+
+# ===== STATES =====
 ARTWORK_STD, ARTWORK_REF = range(2)
 
 TMP_ARTWORK_FOLDER = "tmp_artwork"
 
 
+# ==========================================================
+# HELPERS
+# ==========================================================
 def _ensure_tmp_folder():
     os.makedirs(TMP_ARTWORK_FOLDER, exist_ok=True)
 
@@ -37,12 +42,12 @@ def _save_pdf(document, prefix: str, chat_id: int) -> str:
 # ==========================================================
 # ENTRY POINT
 # ==========================================================
-def start_artwork_review(update: Update, context: CallbackContext) -> int:
+def start_artwork(update: Update, context: CallbackContext) -> int:
     """
-    Step 1: Ask user for Standard / Approved artwork PDF.
-    Triggered by:
-        - /artwork command
-        - Main menu button "🖼 Artwork Review"
+    Starts when user types:
+    - /artwork
+    - artwork, review artwork (via regex)
+    - menu button "🖼 Artwork Review"
     """
     update.message.reply_markdown(
         "🖼 *Artwork Review Mode*\n\n"
@@ -58,14 +63,12 @@ def start_artwork_review(update: Update, context: CallbackContext) -> int:
 def artwork_standard_received(update: Update, context: CallbackContext) -> int:
     doc = update.message.document
     if not doc or not (doc.mime_type or "").lower().endswith("pdf"):
-        update.message.reply_markdown(
-            "⚠ Please upload a *PDF* file for the Standard artwork."
-        )
+        update.message.reply_text("⚠ Please upload a *PDF* file for the Standard artwork.")
         return ARTWORK_STD
 
     chat_id = update.effective_chat.id
     std_path = _save_pdf(doc, "std", chat_id)
-    context.user_data["artwork_std_path"] = std_path
+    context.user_data["artwork_std"] = std_path
 
     update.message.reply_markdown(
         "✅ Standard artwork received.\n\n"
@@ -75,76 +78,66 @@ def artwork_standard_received(update: Update, context: CallbackContext) -> int:
 
 
 # ==========================================================
-# STEP 2 – REFERENCE ARTWORK + RUN ANALYSIS
+# STEP 2 – REFERENCE ARTWORK + RUN COMPARISON
 # ==========================================================
 def artwork_reference_received(update: Update, context: CallbackContext) -> int:
     doc = update.message.document
     if not doc or not (doc.mime_type or "").lower().endswith("pdf"):
-        update.message.reply_markdown(
-            "⚠ Please upload a *PDF* file for the Reference artwork."
-        )
+        update.message.reply_text("⚠ Please upload a *PDF* for the Reference artwork.")
         return ARTWORK_REF
 
     chat_id = update.effective_chat.id
     ref_path = _save_pdf(doc, "ref", chat_id)
-    std_path = context.user_data.get("artwork_std_path")
 
+    std_path = context.user_data.get("artwork_std")
     if not std_path or not os.path.exists(std_path):
-        update.message.reply_text(
-            "I lost the Standard artwork file in memory. "
-            "Please restart the flow with /artwork."
-        )
+        update.message.reply_text("❌ Standard artwork missing. Please restart with /artwork")
         return ConversationHandler.END
 
-    update.message.reply_text(
-        "🧪 Running artwork comparison and generating HTML report..."
-    )
+    update.message.reply_text("🧪 Comparing artworks and generating report...")
 
     try:
-        html_report = run_artwork_review(std_path, ref_path)
+        html = run_artwork_review(std_path, ref_path)
     except Exception as e:
-        update.message.reply_text(f"Error while analysing artwork: {e}")
+        update.message.reply_text(f"Error during analysis: {e}")
         return ConversationHandler.END
 
-    bio = BytesIO(html_report.encode("utf-8"))
+    bio = BytesIO(html.encode("utf-8"))
     bio.name = "artwork_review_report.html"
 
     update.message.reply_document(
         document=bio,
         filename=bio.name,
-        caption="📄 Artwork Review Report (HTML)",
+        caption="📄 Artwork Review Report",
     )
 
-    # Optional cleanup
-    try:
-        os.remove(std_path)
-    except Exception:
-        pass
-    try:
-        os.remove(ref_path)
-    except Exception:
-        pass
+    # Cleanup
+    for f in (std_path, ref_path):
+        try:
+            os.remove(f)
+        except:
+            pass
 
-    context.user_data.pop("artwork_std_path", None)
+    context.user_data.pop("artwork_std", None)
     return ConversationHandler.END
 
 
 # ==========================================================
-# CANCEL HANDLER
+# CANCEL
 # ==========================================================
-def cancel_artwork(update: Update, context: CallbackContext) -> int:
-    context.user_data.pop("artwork_std_path", None)
+def cancel_artwork(update: Update, context: CallbackContext):
+    context.user_data.pop("artwork_std", None)
     update.message.reply_text("Artwork review cancelled.")
     return ConversationHandler.END
 
 
 # ==========================================================
-# CONVERSATION HANDLER (13.x STYLE)
+# CONVERSATION HANDLER (PTB 13.x)
 # ==========================================================
 artwork_conv = ConversationHandler(
     entry_points=[
-        CommandHandler("artwork", start_artwork_review),
-        MessageHandler(Filters.regex(r"^🖼 Artwork Review$"), start_artwork_review),
+        CommandHandler("artwork", start_artwork),
+        MessageHandler(Filters.regex(r"(?i)(artwork|review artwork|start artwork)"), start_artwork),
     ],
     states={
         ARTWORK_STD: [
@@ -154,7 +147,8 @@ artwork_conv = ConversationHandler(
             MessageHandler(Filters.document, artwork_reference_received),
         ],
     },
-    fallbacks=[CommandHandler("cancel", cancel_artwork)],
-    name="artwork_review_conversation",
-    persistent=False,
+    fallbacks=[
+        CommandHandler("cancel", cancel_artwork),
+    ],
+    per_user=True,
 )
