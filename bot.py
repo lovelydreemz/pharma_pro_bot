@@ -40,7 +40,7 @@ from voice_handler import transcribe_voice
 from pdf_approval import save_pending_pdf, approve_pending_pdf
 
 # ==========================================================
-# NEW IMPORTS (conversation handlers)
+# NEW IMPORTS (ConversationHandlers)
 # ==========================================================
 try:
     from handlers.moa_handler import moa_conv
@@ -63,11 +63,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # In-memory state
-USER_MODE = {}   # chat_id -> "ask" / "sop" / "uploadpdf" / "voice"
-ADMIN_EXPECT = {}  # chat_id -> "view_pdf_id" / "approve_pdf_id" / "add_admin_id"
+USER_MODE = {}        # chat_id -> mode string
+ADMIN_EXPECT = {}     # chat_id -> which admin input we are waiting for
 
 # ==========================================================
-# UPDATED MAIN MENU
+# MENUS
 # ==========================================================
 MAIN_MENU = [
     ["📚 Ask Question", "🧾 SOP Generator"],
@@ -83,6 +83,7 @@ ADMIN_MENU = [
     ["👁 View PDF", "✔ Approve PDF"],
     ["👥 Online Users"],
     ["✅ Subscribed Users", "🚫 Free Users"],
+    ["💳 Activate User"],
     ["➕ Add Admin"],
     ["⬅️ Back to User Menu"],
 ]
@@ -90,7 +91,7 @@ ADMIN_MENU = [
 
 def _is_admin_user(chat_id: int) -> bool:
     db_user = get_user_by_chat_id(chat_id)
-    db_flag = bool(db_user and db_user["is_admin"])
+    db_flag = bool(db_user and db_user.get("is_admin"))
     return (chat_id in ADMIN_IDS) or db_flag
 
 
@@ -101,6 +102,7 @@ def admin_only(func):
             update.message.reply_text("Only admins can use this command.")
             return
         return func(update, context, *args, **kwargs)
+
     return wrapper
 
 
@@ -112,7 +114,7 @@ def _build_main_keyboard(chat_id: int) -> ReplyKeyboardMarkup:
 
 
 # ==========================================================
-# START / HELP / MENU COMMANDS
+# START / HELP
 # ==========================================================
 def start(update: Update, context: CallbackContext):
     user = update.effective_user
@@ -149,7 +151,7 @@ def help_cmd(update: Update, context: CallbackContext):
         "/subscription - Your subscription status\n"
         "/admin - Admin panel\n"
         "\n"
-        "NEW:\n"
+        "NEW FLOWS:\n"
         "/moa – Method of Analysis\n"
         "/deviation – Deviation Report\n"
         "/capa – CAPA\n"
@@ -160,12 +162,17 @@ def help_cmd(update: Update, context: CallbackContext):
 
 
 # ==========================================================
-# EXISTING COMMANDS: SUBSCRIPTION / Q&A / SOP / ALERTS
+# USER COMMANDS
 # ==========================================================
 def subscription_cmd(update: Update, context: CallbackContext):
     user = update.effective_user
     db_user = get_or_create_user(user.id, user.username, user.full_name)
     update.message.reply_markdown(subscription_status_text(db_user))
+    update.message.reply_text(
+        "If you have done the payment, please send a *screenshot/photo* here.\n"
+        "I will forward it to admin for activation. ✅",
+        parse_mode="Markdown",
+    )
 
 
 def ask_cmd(update: Update, context: CallbackContext):
@@ -198,7 +205,10 @@ def alerts_cmd(update: Update, context: CallbackContext):
 def uploadpdf_cmd(update: Update, context: CallbackContext):
     USER_MODE[update.effective_user.id] = "uploadpdf"
     ADMIN_EXPECT.pop(update.effective_user.id, None)
-    update.message.reply_text("Send your PDF file.", parse_mode="Markdown")
+    update.message.reply_text(
+        "Send your *reference PDF* (it will go to admin for approval).",
+        parse_mode="Markdown",
+    )
 
 
 def voice_mode_cmd(update: Update, context: CallbackContext):
@@ -208,7 +218,7 @@ def voice_mode_cmd(update: Update, context: CallbackContext):
 
 
 # ==========================================================
-# ADMIN MENU COMMAND
+# ADMIN PANEL
 # ==========================================================
 @admin_only
 def admin_menu_cmd(update: Update, context: CallbackContext):
@@ -219,43 +229,38 @@ def admin_menu_cmd(update: Update, context: CallbackContext):
 
 
 # ==========================================================
-# 🎯 MENU BUTTON HANDLER (ONLY SIMPLE ACTIONS HERE)
+# MENU BUTTON HANDLER (ONLY HIGH-LEVEL, NOT QA FLOWS)
 # ==========================================================
 def _handle_menu_buttons(update: Update, context: CallbackContext) -> bool:
     text = (update.message.text or "").strip()
     user_id = update.effective_user.id
 
-    # USER MENU (simple mode switches)
+    # User menu
     if text == "📚 Ask Question":
         ask_cmd(update, context)
         return True
-
     if text == "🧾 SOP Generator":
         sop_cmd(update, context)
         return True
-
     if text == "🚨 Regulatory Alerts":
         alerts_cmd(update, context)
         return True
-
     if text == "📤 Upload PDF":
         uploadpdf_cmd(update, context)
         return True
-
     if text == "🎙 Voice Q&A":
         voice_mode_cmd(update, context)
         return True
-
     if text == "💳 Subscription Status":
         subscription_cmd(update, context)
         return True
 
-    # IMPORTANT:
-    # Do NOT manually call start_moa / start_deviation / etc here.
-    # The ConversationHandlers will capture these button texts
-    # via Filters.regex entry_points in their own files.
+    # NOTE:
+    # The QA flows (MOA / Deviation / CAPA / CC / Artwork) are
+    # handled by their own ConversationHandlers via regex entry_points.
+    # So we do NOT intercept those texts here.
 
-    # ADMIN BUTTONS
+    # Admin entry
     if text == "🛠 Admin Panel" and _is_admin_user(user_id):
         admin_menu_cmd(update, context)
         return True
@@ -263,7 +268,7 @@ def _handle_menu_buttons(update: Update, context: CallbackContext) -> bool:
     if not _is_admin_user(user_id):
         return False
 
-    # Admin actions
+    # Admin buttons
     if text == "📂 Pending PDFs":
         pending_pdfs_cmd(update, context)
         return True
@@ -290,6 +295,14 @@ def _handle_menu_buttons(update: Update, context: CallbackContext) -> bool:
         admin_free_users_cmd(update, context)
         return True
 
+    if text == "💳 Activate User":
+        ADMIN_EXPECT[user_id] = "activate_chat_id"
+        update.message.reply_text(
+            "Send *chat_id* of user to activate subscription.",
+            parse_mode="Markdown",
+        )
+        return True
+
     if text == "➕ Add Admin":
         ADMIN_EXPECT[user_id] = "add_admin_id"
         update.message.reply_text("Send chat_id to grant admin.")
@@ -303,7 +316,7 @@ def _handle_menu_buttons(update: Update, context: CallbackContext) -> bool:
 
 
 # ==========================================================
-# TEXT MESSAGE HANDLER
+# TEXT MESSAGE HANDLER (Q&A / SOP)
 # ==========================================================
 def text_message(update: Update, context: CallbackContext):
     user = update.effective_user
@@ -313,7 +326,7 @@ def text_message(update: Update, context: CallbackContext):
     if _handle_menu_buttons(update, context):
         return
 
-    # 2) Handle admin expectations (ID entry)
+    # 2) Handle admin expectations (IDs / chat_ids)
     admin_mode = ADMIN_EXPECT.get(user.id)
     if admin_mode and _is_admin_user(user.id):
         if admin_mode == "view_pdf_id":
@@ -345,11 +358,28 @@ def text_message(update: Update, context: CallbackContext):
             ADMIN_EXPECT.pop(user.id, None)
             return
 
-    # 3) Allow /commands to go to CommandHandlers
+        if admin_mode == "activate_chat_id":
+            try:
+                chat_id = int(message_text)
+                set_user_premium(chat_id, True)
+                update.message.reply_text(f"User {chat_id} activated as Lifetime Pro.")
+                try:
+                    context.bot.send_message(
+                        chat_id=chat_id,
+                        text="Your payment is verified. Lifetime Pro access is now active. ✅",
+                    )
+                except Exception:
+                    logger.exception("Failed to notify user about activation")
+            except Exception:
+                update.message.reply_text("Invalid chat_id.")
+            ADMIN_EXPECT.pop(user.id, None)
+            return
+
+    # 3) Let /commands be handled by CommandHandlers
     if message_text.startswith("/"):
         return
 
-    # 4) MAIN ENGINE (Ask / SOP)
+    # 4) Main engine (Ask / SOP)
     db_user = get_or_create_user(user.id, user.username, user.full_name)
     allowed, msg = can_user_ask(db_user)
     if not allowed:
@@ -384,7 +414,7 @@ def text_message(update: Update, context: CallbackContext):
 
 
 # ==========================================================
-# 📤 PDF UPLOAD HANDLER
+# PDF UPLOAD HANDLER
 # ==========================================================
 def document_handler(update: Update, context: CallbackContext):
     user = update.effective_user
@@ -425,11 +455,62 @@ def document_handler(update: Update, context: CallbackContext):
                 f"New PDF pending:\nID: {doc_id}\nUser: {db_user['id']} (chat {user.id})",
             )
         except Exception:
-            pass
+            logger.exception("Failed to notify admin about new PDF")
 
 
 # ==========================================================
-# 🎙 VOICE HANDLER
+# PAYMENT SCREENSHOT HANDLER (PHOTO)
+# ==========================================================
+def payment_screenshot_handler(update: Update, context: CallbackContext):
+    """
+    Any photo from normal user is treated as payment proof.
+    Saved locally and forwarded to all admins.
+    """
+    user = update.effective_user
+    db_user = get_or_create_user(user.id, user.username, user.full_name)
+
+    # Ignore photos when user is in uploadpdf mode (those should be documents)
+    if USER_MODE.get(user.id) == "uploadpdf":
+        return
+
+    photos = update.message.photo
+    if not photos:
+        return
+
+    largest = photos[-1]
+    os.makedirs("payments", exist_ok=True)
+    file = largest.get_file()
+    path = os.path.join("payments", f"{user.id}_{largest.file_unique_id}.jpg")
+    file.download(custom_path=path)
+
+    update.message.reply_text(
+        "💳 Payment screenshot received.\n"
+        "Admin will review and activate your subscription soon if everything is OK."
+    )
+
+    caption = (
+        "💳 *New payment screenshot received*\n\n"
+        f"Chat ID: `{user.id}`\n"
+        f"Username: @{user.username or '-'}\n"
+        f"Name: {user.full_name or '-'}\n\n"
+        "Use /activate_user {chat_id} or Admin Panel → 💳 Activate User."
+    ).replace("{chat_id}", str(user.id))
+
+    for admin_id in ADMIN_IDS:
+        try:
+            with open(path, "rb") as f:
+                context.bot.send_photo(
+                    chat_id=admin_id,
+                    photo=f,
+                    caption=caption,
+                    parse_mode="Markdown",
+                )
+        except Exception:
+            logger.exception("Failed to forward payment screenshot to admin")
+
+
+# ==========================================================
+# VOICE HANDLER
 # ==========================================================
 def voice_handler(update: Update, context: CallbackContext):
     user = update.effective_user
@@ -463,11 +544,12 @@ def voice_handler(update: Update, context: CallbackContext):
 
         update.message.reply_text(reply)
     except Exception as e:
+        logger.exception("Error in voice_handler")
         update.message.reply_text(f"Error: {e}")
 
 
 # ==========================================================
-# 📂 ADMIN LIST FUNCTIONS
+# ADMIN – PDF LIST / VIEW / APPROVE
 # ==========================================================
 @admin_only
 def pending_pdfs_cmd(update: Update, context: CallbackContext):
@@ -536,7 +618,7 @@ def approve_pdf_cmd(update: Update, context: CallbackContext):
 
 
 # ==========================================================
-# ADMIN: USER MANAGEMENT
+# ADMIN – USER MANAGEMENT
 # ==========================================================
 @admin_only
 def activate_user_cmd(update: Update, context: CallbackContext):
@@ -549,7 +631,10 @@ def activate_user_cmd(update: Update, context: CallbackContext):
         chat_id = int(parts[1])
         set_user_premium(chat_id, True)
         update.message.reply_text(f"User {chat_id} is now Lifetime Pro.")
-        context.bot.send_message(chat_id, "Your Pro plan is activated. 🎉")
+        try:
+            context.bot.send_message(chat_id, "Your Pro plan is activated. 🎉")
+        except Exception:
+            logger.exception("Failed to notify user about activation")
     except Exception:
         update.message.reply_text("Invalid chat_id.")
 
@@ -595,7 +680,7 @@ def admin_free_users_cmd(update: Update, context: CallbackContext):
 
 
 # ==========================================================
-# HTML REPORT TABLE GENERATOR
+# HTML REPORT SENDER
 # ==========================================================
 def _send_users_as_html(update: Update, title: str, rows):
     html = [
@@ -621,26 +706,26 @@ def _send_users_as_html(update: Update, title: str, rows):
 
     bio = BytesIO("".join(html).encode("utf-8"))
     bio.name = "users.html"
-
     update.message.reply_document(bio, filename=bio.name)
 
 
 # ==========================================================
-# MAIN ENTRYPOINT
+# MAIN
 # ==========================================================
 def main():
     init_db()
 
+    # Ensure config.ADMIN_IDS exist as admins in DB
     for cid in ADMIN_IDS:
         try:
             set_user_admin(cid, True)
         except Exception:
-            pass
+            logger.exception("Failed to ensure admin flag in DB")
 
     updater = Updater(TELEGRAM_BOT_TOKEN, use_context=True)
     dp = updater.dispatcher
 
-    # COMMANDS
+    # Core commands
     dp.add_handler(CommandHandler("start", start))
     dp.add_handler(CommandHandler("help", help_cmd))
     dp.add_handler(CommandHandler("subscription", subscription_cmd))
@@ -649,6 +734,8 @@ def main():
     dp.add_handler(CommandHandler("alerts", alerts_cmd))
     dp.add_handler(CommandHandler("uploadpdf", uploadpdf_cmd))
     dp.add_handler(CommandHandler("voice", voice_mode_cmd))
+
+    # Admin commands
     dp.add_handler(CommandHandler("admin", admin_menu_cmd))
     dp.add_handler(CommandHandler("pending_pdfs", pending_pdfs_cmd))
     dp.add_handler(CommandHandler("approve_pdf", approve_pdf_cmd))
@@ -656,7 +743,7 @@ def main():
     dp.add_handler(CommandHandler("activate_user", activate_user_cmd))
     dp.add_handler(CommandHandler("add_admin", add_admin_cmd))
 
-    # NEW QA FEATURE CONVERSATION HANDLERS
+    # QA ConversationHandlers (they must define entry_points themselves)
     if moa_conv:
         dp.add_handler(moa_conv)
     if deviation_conv:
@@ -668,11 +755,12 @@ def main():
     if artwork_conv:
         dp.add_handler(artwork_conv)
 
-    # FILE & VOICE
+    # Files / media
     dp.add_handler(MessageHandler(Filters.document, document_handler))
+    dp.add_handler(MessageHandler(Filters.photo, payment_screenshot_handler))
     dp.add_handler(MessageHandler(Filters.voice | Filters.audio, voice_handler))
 
-    # TEXT (fallback)
+    # Fallback text handler (must be last)
     dp.add_handler(MessageHandler(Filters.text & ~Filters.command, text_message))
 
     updater.start_polling()
