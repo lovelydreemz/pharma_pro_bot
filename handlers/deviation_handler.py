@@ -206,6 +206,7 @@ def dev_target_date(update, context):
     return DEV_EFFECTIVENESS
 
 
+# ===== FINAL STEP =====
 def dev_effectiveness(update, context):
     context.user_data["dev"]["effectiveness_check_plan"] = update.message.text.strip()
 
@@ -228,7 +229,6 @@ def dev_effectiveness(update, context):
 deviation_conv = ConversationHandler(
     entry_points=[
         CommandHandler("deviation", start_deviation),
-        # Triggered by menu button "📄 Deviation"
         MessageHandler(Filters.regex(r"^📄 Deviation$"), start_deviation),
     ],
     states={
@@ -241,22 +241,40 @@ deviation_conv = ConversationHandler(
         DEV_MATERIAL: [MessageHandler(Filters.text & ~Filters.command, dev_material)],
         DEV_TYPE: [MessageHandler(Filters.text & ~Filters.command, dev_type)],
         DEV_CATEGORY: [MessageHandler(Filters.text & ~Filters.command, dev_category)],
-        DEV_DATE_OCCUR: [MessageHandler(Filters.text & ~Filters.command, dev_date_occur)],
+        DEV_DATE_OCCUR: [
+            MessageHandler(Filters.text & ~Filters.command, dev_date_occur)
+        ],
         DEV_LOCATION: [MessageHandler(Filters.text & ~Filters.command, dev_location)],
         DEV_DESC: [MessageHandler(Filters.text & ~Filters.command, dev_desc)],
         DEV_IMMEDIATE: [MessageHandler(Filters.text & ~Filters.command, dev_immediate)],
-        DEV_INVESTIGATION: [MessageHandler(Filters.text & ~Filters.command, dev_investigation)],
-        DEV_ROOT_CAUSE: [MessageHandler(Filters.text & ~Filters.command, dev_root_cause)],
+        DEV_INVESTIGATION: [
+            MessageHandler(Filters.text & ~Filters.command, dev_investigation)
+        ],
+        DEV_ROOT_CAUSE: [
+            MessageHandler(Filters.text & ~Filters.command, dev_root_cause)
+        ],
         DEV_TOOLS: [MessageHandler(Filters.text & ~Filters.command, dev_tools)],
         DEV_RISK: [MessageHandler(Filters.text & ~Filters.command, dev_risk)],
-        DEV_IMPACT_PRODUCT: [MessageHandler(Filters.text & ~Filters.command, dev_impact_product)],
-        DEV_IMPACT_COMPLIANCE: [MessageHandler(Filters.text & ~Filters.command, dev_impact_compliance)],
-        DEV_IMPACT_TIME: [MessageHandler(Filters.text & ~Filters.command, dev_impact_time)],
+        DEV_IMPACT_PRODUCT: [
+            MessageHandler(Filters.text & ~Filters.command, dev_impact_product)
+        ],
+        DEV_IMPACT_COMPLIANCE: [
+            MessageHandler(Filters.text & ~Filters.command, dev_impact_compliance)
+        ],
+        DEV_IMPACT_TIME: [
+            MessageHandler(Filters.text & ~Filters.command, dev_impact_time)
+        ],
         DEV_CA: [MessageHandler(Filters.text & ~Filters.command, dev_ca)],
         DEV_PA: [MessageHandler(Filters.text & ~Filters.command, dev_pa)],
-        DEV_RESPONSIBLE: [MessageHandler(Filters.text & ~Filters.command, dev_responsible)],
-        DEV_TARGET_DATE: [MessageHandler(Filters.text & ~Filters.command, dev_target_date)],
-        DEV_EFFECTIVENESS: [MessageHandler(Filters.text & ~Filters.command, dev_effectiveness)],
+        DEV_RESPONSIBLE: [
+            MessageHandler(Filters.text & ~Filters.command, dev_responsible)
+        ],
+        DEV_TARGET_DATE: [
+            MessageHandler(Filters.text & ~Filters.command, dev_target_date)
+        ],
+        DEV_EFFECTIVENESS: [
+            MessageHandler(Filters.text & ~Filters.command, dev_effectiveness)
+        ],
     },
     fallbacks=[],
     per_user=True,
