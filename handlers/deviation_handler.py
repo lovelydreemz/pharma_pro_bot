@@ -1,17 +1,17 @@
 # handlers/deviation_handler.py
 
-from io import BytesIO
-
 from telegram import Update, ReplyKeyboardRemove
 from telegram.ext import (
     ConversationHandler,
+    CommandHandler,
     MessageHandler,
     Filters,
     CallbackContext,
-    CommandHandler,
 )
+from io import BytesIO
 
 from modules.deviation import DeviationInput, generate_deviation_html
+
 
 # ===== STATES =====
 (
@@ -43,12 +43,14 @@ from modules.deviation import DeviationInput, generate_deviation_html
 ) = range(25)
 
 
-# ===== ENTRY COMMAND =====
+# ==========================================================
+# ENTRY POINT
+# ==========================================================
 def start_deviation(update: Update, context: CallbackContext):
     update.message.reply_text(
         "📄 *Deviation Report Generator*\n\n"
-        "Let's begin.\n"
-        "Enter *Deviation ID* (e.g., DEV-001):",
+        "Let's begin drafting your Deviation Report.\n"
+        "Send *Deviation ID* (e.g., DEV-001):",
         parse_mode="Markdown",
         reply_markup=ReplyKeyboardRemove(),
     )
@@ -56,93 +58,95 @@ def start_deviation(update: Update, context: CallbackContext):
     return DEV_ID
 
 
-# ===== QUESTION FLOW =====
+# ==========================================================
+# QUESTION FLOW
+# ==========================================================
 def dev_id(update, context):
-    context.user_data["dev"]["deviation_id"] = update.message.text.strip()
+    context.user_data["dev"]["deviation_id"] = update.message.text
     update.message.reply_text("Enter *Date Reported* (DD-MM-YYYY):")
     return DEV_DATE
 
 
 def dev_date(update, context):
-    context.user_data["dev"]["date_reported"] = update.message.text.strip()
+    context.user_data["dev"]["date_reported"] = update.message.text
     update.message.reply_text("Enter *Reported By*:")
     return DEV_BY
 
 
 def dev_by(update, context):
-    context.user_data["dev"]["reported_by"] = update.message.text.strip()
+    context.user_data["dev"]["reported_by"] = update.message.text
     update.message.reply_text("Enter *Department*:")
     return DEV_DEPT
 
 
 def dev_dept(update, context):
-    context.user_data["dev"]["department"] = update.message.text.strip()
+    context.user_data["dev"]["department"] = update.message.text
     update.message.reply_text("Enter *Product Name* (or NA):")
     return DEV_PRODUCT
 
 
 def dev_product(update, context):
-    context.user_data["dev"]["product_name"] = update.message.text.strip()
+    context.user_data["dev"]["product_name"] = update.message.text
     update.message.reply_text("Enter *Batch No.* (or NA):")
     return DEV_BATCH
 
 
 def dev_batch(update, context):
-    context.user_data["dev"]["batch_no"] = update.message.text.strip()
+    context.user_data["dev"]["batch_no"] = update.message.text
     update.message.reply_text("Enter *Material Name* (if applicable):")
     return DEV_MATERIAL
 
 
 def dev_material(update, context):
-    context.user_data["dev"]["material_name"] = update.message.text.strip()
+    context.user_data["dev"]["material_name"] = update.message.text
     update.message.reply_text("Enter *Deviation Type*: Planned / Unplanned")
     return DEV_TYPE
 
 
 def dev_type(update, context):
-    context.user_data["dev"]["deviation_type"] = update.message.text.strip()
+    context.user_data["dev"]["deviation_type"] = update.message.text
     update.message.reply_text("Enter *Deviation Category*: Critical / Major / Minor")
     return DEV_CATEGORY
 
 
 def dev_category(update, context):
-    context.user_data["dev"]["deviation_category"] = update.message.text.strip()
+    context.user_data["dev"]["deviation_category"] = update.message.text
     update.message.reply_text("Enter *Date of Occurrence*:")
     return DEV_DATE_OCCUR
 
 
 def dev_date_occur(update, context):
-    context.user_data["dev"]["date_of_occurrence"] = update.message.text.strip()
-    update.message.reply_text("Enter *Location* of deviation:")
+    context.user_data["dev"]["date_of_occurrence"] = update.message.text
+    update.message.reply_text("Enter *Location* of Deviation:")
     return DEV_LOCATION
 
 
 def dev_location(update, context):
-    context.user_data["dev"]["location"] = update.message.text.strip()
-    update.message.reply_text("Describe the *Deviation* in detail:")
+    context.user_data["dev"]["location"] = update.message.text
+    update.message.reply_text("Describe the *Deviation*:")
     return DEV_DESC
 
 
 def dev_desc(update, context):
-    context.user_data["dev"]["description"] = update.message.text.strip()
+    context.user_data["dev"]["description"] = update.message.text
     update.message.reply_text("Enter *Immediate Corrective Action*:")
     return DEV_IMMEDIATE
 
 
 def dev_immediate(update, context):
-    context.user_data["dev"]["immediate_action"] = update.message.text.strip()
+    context.user_data["dev"]["immediate_action"] = update.message.text
     update.message.reply_text("Enter *Investigation Summary*:")
     return DEV_INVESTIGATION
 
 
 def dev_investigation(update, context):
-    context.user_data["dev"]["investigation_summary"] = update.message.text.strip()
+    context.user_data["dev"]["investigation_summary"] = update.message.text
     update.message.reply_text("Enter *Root Cause*:")
     return DEV_ROOT_CAUSE
 
 
 def dev_root_cause(update, context):
-    context.user_data["dev"]["root_cause"] = update.message.text.strip()
+    context.user_data["dev"]["root_cause"] = update.message.text
     update.message.reply_text("Enter *Tools Used* (e.g. 5-Why, Fishbone):")
     return DEV_TOOLS
 
@@ -155,60 +159,58 @@ def dev_tools(update, context):
 
 
 def dev_risk(update, context):
-    context.user_data["dev"]["risk_assessment"] = update.message.text.strip()
+    context.user_data["dev"]["risk_assessment"] = update.message.text
     update.message.reply_text("Impact on *Product / Patient / Quality*:")
     return DEV_IMPACT_PRODUCT
 
 
 def dev_impact_product(update, context):
-    context.user_data["dev"]["impact_on_product"] = update.message.text.strip()
+    context.user_data["dev"]["impact_on_product"] = update.message.text
     update.message.reply_text("Impact on *Compliance / Regulatory*:")
     return DEV_IMPACT_COMPLIANCE
 
 
 def dev_impact_compliance(update, context):
-    context.user_data["dev"]["impact_on_compliance"] = update.message.text.strip()
+    context.user_data["dev"]["impact_on_compliance"] = update.message.text
     update.message.reply_text("Impact on *Timeline / Cost*:")
     return DEV_IMPACT_TIME
 
 
 def dev_impact_time(update, context):
-    context.user_data["dev"]["impact_on_timeline_cost"] = update.message.text.strip()
+    context.user_data["dev"]["impact_on_timeline_cost"] = update.message.text
     update.message.reply_text("Enter *Corrective Actions* (comma separated):")
     return DEV_CA
 
 
 def dev_ca(update, context):
-    context.user_data["dev"]["corrective_actions"] = [
-        c.strip() for c in update.message.text.split(",")
-    ]
+    context.user_data["dev"]["corrective_actions"] = [c.strip() for c in update.message.text.split(",")]
     update.message.reply_text("Enter *Preventive Actions* (comma separated):")
     return DEV_PA
 
 
 def dev_pa(update, context):
-    context.user_data["dev"]["preventive_actions"] = [
-        p.strip() for p in update.message.text.split(",")
-    ]
+    context.user_data["dev"]["preventive_actions"] = [p.strip() for p in update.message.text.split(",")]
     update.message.reply_text("Enter *Responsible Person*:")
     return DEV_RESPONSIBLE
 
 
 def dev_responsible(update, context):
-    context.user_data["dev"]["responsible_person"] = update.message.text.strip()
+    context.user_data["dev"]["responsible_person"] = update.message.text
     update.message.reply_text("Enter *Target Completion Date*:")
     return DEV_TARGET_DATE
 
 
 def dev_target_date(update, context):
-    context.user_data["dev"]["target_completion_date"] = update.message.text.strip()
+    context.user_data["dev"]["target_completion_date"] = update.message.text
     update.message.reply_text("Enter *Effectiveness Check Plan*:")
     return DEV_EFFECTIVENESS
 
 
-# ===== FINAL STEP =====
+# ==========================================================
+# FINAL STEP
+# ==========================================================
 def dev_effectiveness(update, context):
-    context.user_data["dev"]["effectiveness_check_plan"] = update.message.text.strip()
+    context.user_data["dev"]["effectiveness_check_plan"] = update.message.text
 
     data = DeviationInput(**context.user_data["dev"])
     html = generate_deviation_html(data)
@@ -225,11 +227,13 @@ def dev_effectiveness(update, context):
     return ConversationHandler.END
 
 
-# ===== CONVERSATION HANDLER =====
+# ==========================================================
+# CLEAN ENTRY POINTS (Regex + Command)
+# ==========================================================
 deviation_conv = ConversationHandler(
     entry_points=[
         CommandHandler("deviation", start_deviation),
-        MessageHandler(Filters.regex(r"^📄 Deviation$"), start_deviation),
+        MessageHandler(Filters.regex(r"(?i)(deviation|dev report|generate deviation)"), start_deviation),
     ],
     states={
         DEV_ID: [MessageHandler(Filters.text & ~Filters.command, dev_id)],
@@ -241,40 +245,22 @@ deviation_conv = ConversationHandler(
         DEV_MATERIAL: [MessageHandler(Filters.text & ~Filters.command, dev_material)],
         DEV_TYPE: [MessageHandler(Filters.text & ~Filters.command, dev_type)],
         DEV_CATEGORY: [MessageHandler(Filters.text & ~Filters.command, dev_category)],
-        DEV_DATE_OCCUR: [
-            MessageHandler(Filters.text & ~Filters.command, dev_date_occur)
-        ],
+        DEV_DATE_OCCUR: [MessageHandler(Filters.text & ~Filters.command, dev_date_occur)],
         DEV_LOCATION: [MessageHandler(Filters.text & ~Filters.command, dev_location)],
         DEV_DESC: [MessageHandler(Filters.text & ~Filters.command, dev_desc)],
         DEV_IMMEDIATE: [MessageHandler(Filters.text & ~Filters.command, dev_immediate)],
-        DEV_INVESTIGATION: [
-            MessageHandler(Filters.text & ~Filters.command, dev_investigation)
-        ],
-        DEV_ROOT_CAUSE: [
-            MessageHandler(Filters.text & ~Filters.command, dev_root_cause)
-        ],
+        DEV_INVESTIGATION: [MessageHandler(Filters.text & ~Filters.command, dev_investigation)],
+        DEV_ROOT_CAUSE: [MessageHandler(Filters.text & ~Filters.command, dev_root_cause)],
         DEV_TOOLS: [MessageHandler(Filters.text & ~Filters.command, dev_tools)],
         DEV_RISK: [MessageHandler(Filters.text & ~Filters.command, dev_risk)],
-        DEV_IMPACT_PRODUCT: [
-            MessageHandler(Filters.text & ~Filters.command, dev_impact_product)
-        ],
-        DEV_IMPACT_COMPLIANCE: [
-            MessageHandler(Filters.text & ~Filters.command, dev_impact_compliance)
-        ],
-        DEV_IMPACT_TIME: [
-            MessageHandler(Filters.text & ~Filters.command, dev_impact_time)
-        ],
+        DEV_IMPACT_PRODUCT: [MessageHandler(Filters.text & ~Filters.command, dev_impact_product)],
+        DEV_IMPACT_COMPLIANCE: [MessageHandler(Filters.text & ~Filters.command, dev_impact_compliance)],
+        DEV_IMPACT_TIME: [MessageHandler(Filters.text & ~Filters.command, dev_impact_time)],
         DEV_CA: [MessageHandler(Filters.text & ~Filters.command, dev_ca)],
         DEV_PA: [MessageHandler(Filters.text & ~Filters.command, dev_pa)],
-        DEV_RESPONSIBLE: [
-            MessageHandler(Filters.text & ~Filters.command, dev_responsible)
-        ],
-        DEV_TARGET_DATE: [
-            MessageHandler(Filters.text & ~Filters.command, dev_target_date)
-        ],
-        DEV_EFFECTIVENESS: [
-            MessageHandler(Filters.text & ~Filters.command, dev_effectiveness)
-        ],
+        DEV_RESPONSIBLE: [MessageHandler(Filters.text & ~Filters.command, dev_responsible)],
+        DEV_TARGET_DATE: [MessageHandler(Filters.text & ~Filters.command, dev_target_date)],
+        DEV_EFFECTIVENESS: [MessageHandler(Filters.text & ~Filters.command, dev_effectiveness)],
     },
     fallbacks=[],
     per_user=True,
