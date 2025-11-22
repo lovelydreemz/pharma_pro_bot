@@ -14,6 +14,7 @@ from telegram.ext import (
 
 from artwork_review import run_artwork_review  # your B3 module
 
+# Conversation states
 ARTWORK_STD, ARTWORK_REF = range(2)
 
 TMP_ARTWORK_FOLDER = "tmp_artwork"
@@ -24,6 +25,7 @@ def _ensure_tmp_folder():
 
 
 def _save_pdf(document, prefix: str, chat_id: int) -> str:
+    """Save uploaded Telegram document as PDF in a temp folder and return full path."""
     _ensure_tmp_folder()
     filename = f"{prefix}_{chat_id}_{document.file_unique_id}.pdf"
     path = os.path.join(TMP_ARTWORK_FOLDER, filename)
@@ -32,7 +34,16 @@ def _save_pdf(document, prefix: str, chat_id: int) -> str:
     return path
 
 
+# ==========================================================
+# ENTRY POINT
+# ==========================================================
 def start_artwork_review(update: Update, context: CallbackContext) -> int:
+    """
+    Step 1: Ask user for Standard / Approved artwork PDF.
+    Triggered by:
+        - /artwork command
+        - Main menu button "🖼 Artwork Review"
+    """
     update.message.reply_markdown(
         "🖼 *Artwork Review Mode*\n\n"
         "Step 1️⃣: Please upload the *Standard / Approved* artwork PDF.\n\n"
@@ -41,6 +52,9 @@ def start_artwork_review(update: Update, context: CallbackContext) -> int:
     return ARTWORK_STD
 
 
+# ==========================================================
+# STEP 1 – STANDARD ARTWORK
+# ==========================================================
 def artwork_standard_received(update: Update, context: CallbackContext) -> int:
     doc = update.message.document
     if not doc or not (doc.mime_type or "").lower().endswith("pdf"):
@@ -60,6 +74,9 @@ def artwork_standard_received(update: Update, context: CallbackContext) -> int:
     return ARTWORK_REF
 
 
+# ==========================================================
+# STEP 2 – REFERENCE ARTWORK + RUN ANALYSIS
+# ==========================================================
 def artwork_reference_received(update: Update, context: CallbackContext) -> int:
     doc = update.message.document
     if not doc or not (doc.mime_type or "").lower().endswith("pdf"):
@@ -98,6 +115,7 @@ def artwork_reference_received(update: Update, context: CallbackContext) -> int:
         caption="📄 Artwork Review Report (HTML)",
     )
 
+    # Optional cleanup
     try:
         os.remove(std_path)
     except Exception:
@@ -111,16 +129,21 @@ def artwork_reference_received(update: Update, context: CallbackContext) -> int:
     return ConversationHandler.END
 
 
+# ==========================================================
+# CANCEL HANDLER
+# ==========================================================
 def cancel_artwork(update: Update, context: CallbackContext) -> int:
     context.user_data.pop("artwork_std_path", None)
     update.message.reply_text("Artwork review cancelled.")
     return ConversationHandler.END
 
 
+# ==========================================================
+# CONVERSATION HANDLER (13.x STYLE)
+# ==========================================================
 artwork_conv = ConversationHandler(
     entry_points=[
         CommandHandler("artwork", start_artwork_review),
-        # Triggered by menu button "🖼 Artwork Review"
         MessageHandler(Filters.regex(r"^🖼 Artwork Review$"), start_artwork_review),
     ],
     states={
