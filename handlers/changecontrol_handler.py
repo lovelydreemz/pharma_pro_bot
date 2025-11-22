@@ -1,17 +1,17 @@
 # handlers/changecontrol_handler.py
 
-from io import BytesIO
-
 from telegram import Update, ReplyKeyboardRemove
 from telegram.ext import (
     ConversationHandler,
+    CommandHandler,
     MessageHandler,
     Filters,
     CallbackContext,
-    CommandHandler,
 )
+from io import BytesIO
 
 from modules.change_control import ChangeControlInput, generate_cc_html
+
 
 # ===== STATES =====
 (
@@ -36,12 +36,14 @@ from modules.change_control import ChangeControlInput, generate_cc_html
 ) = range(18)
 
 
-# ===== START =====
+# ==========================================================
+# ENTRY POINT
+# ==========================================================
 def start_cc(update: Update, context: CallbackContext):
     update.message.reply_text(
         "⚙ *Change Control (CC) Generator*\n\n"
         "Let's start your Change Control request.\n"
-        "Enter *CC ID* (e.g., CC-001):",
+        "Send *CC ID* (e.g., CC-001):",
         parse_mode="Markdown",
         reply_markup=ReplyKeyboardRemove(),
     )
@@ -49,7 +51,9 @@ def start_cc(update: Update, context: CallbackContext):
     return CC_ID
 
 
-# ===== Question Flow =====
+# ==========================================================
+# QUESTION FLOW
+# ==========================================================
 def cc_id(update, context):
     context.user_data["cc"]["cc_id"] = update.message.text.strip()
     update.message.reply_text("Enter *Date Initiated* (DD-MM-YYYY):")
@@ -78,7 +82,7 @@ def cc_dept(update, context):
         "• Process Change\n"
         "• Facility Change\n"
         "• Specification Change\n"
-        "• Packaging Change\n"
+        "• Packaging Change"
     )
     return CC_TYPE
 
@@ -164,7 +168,9 @@ def cc_target_date(update, context):
     return CC_APPROVAL
 
 
-# ===== FINAL STEP =====
+# ==========================================================
+# FINAL STEP
+# ==========================================================
 def cc_approval(update, context):
     context.user_data["cc"]["approver"] = update.message.text.strip()
 
@@ -183,11 +189,13 @@ def cc_approval(update, context):
     return ConversationHandler.END
 
 
-# ===== CONVERSATION HANDLER =====
+# ==========================================================
+# CLEAN ENTRY POINTS (Regex + /command)
+# ==========================================================
 cc_conv = ConversationHandler(
     entry_points=[
         CommandHandler("cc", start_cc),
-        MessageHandler(Filters.regex(r"^⚙ Change Control$"), start_cc),
+        MessageHandler(Filters.regex(r"(?i)(cc|change control|start cc)"), start_cc),
     ],
     states={
         CC_ID: [MessageHandler(Filters.text & ~Filters.command, cc_id)],
@@ -197,30 +205,16 @@ cc_conv = ConversationHandler(
         CC_TYPE: [MessageHandler(Filters.text & ~Filters.command, cc_type)],
         CC_PRIORITY: [MessageHandler(Filters.text & ~Filters.command, cc_priority)],
         CC_PROPOSAL: [MessageHandler(Filters.text & ~Filters.command, cc_proposal)],
-        CC_JUSTIFICATION: [
-            MessageHandler(Filters.text & ~Filters.command, cc_justification)
-        ],
+        CC_JUSTIFICATION: [MessageHandler(Filters.text & ~Filters.command, cc_justification)],
         CC_PRODUCT: [MessageHandler(Filters.text & ~Filters.command, cc_product)],
         CC_BATCHES: [MessageHandler(Filters.text & ~Filters.command, cc_batches)],
         CC_RISK: [MessageHandler(Filters.text & ~Filters.command, cc_risk)],
-        CC_IMPACT_VALIDATION: [
-            MessageHandler(Filters.text & ~Filters.command, cc_impact_validation)
-        ],
-        CC_IMPACT_QMS: [
-            MessageHandler(Filters.text & ~Filters.command, cc_impact_qms)
-        ],
-        CC_IMPACT_REGULATORY: [
-            MessageHandler(Filters.text & ~Filters.command, cc_impact_regulatory)
-        ],
-        CC_ACTION_PLAN: [
-            MessageHandler(Filters.text & ~Filters.command, cc_action_plan)
-        ],
-        CC_RESPONSIBLE: [
-            MessageHandler(Filters.text & ~Filters.command, cc_responsible)
-        ],
-        CC_TARGET_DATE: [
-            MessageHandler(Filters.text & ~Filters.command, cc_target_date)
-        ],
+        CC_IMPACT_VALIDATION: [MessageHandler(Filters.text & ~Filters.command, cc_impact_validation)],
+        CC_IMPACT_QMS: [MessageHandler(Filters.text & ~Filters.command, cc_impact_qms)],
+        CC_IMPACT_REGULATORY: [MessageHandler(Filters.text & ~Filters.command, cc_impact_regulatory)],
+        CC_ACTION_PLAN: [MessageHandler(Filters.text & ~Filters.command, cc_action_plan)],
+        CC_RESPONSIBLE: [MessageHandler(Filters.text & ~Filters.command, cc_responsible)],
+        CC_TARGET_DATE: [MessageHandler(Filters.text & ~Filters.command, cc_target_date)],
         CC_APPROVAL: [MessageHandler(Filters.text & ~Filters.command, cc_approval)],
     },
     fallbacks=[],
