@@ -1,17 +1,17 @@
 # handlers/capa_handler.py
 
-from io import BytesIO
-
 from telegram import Update, ReplyKeyboardRemove
 from telegram.ext import (
     ConversationHandler,
+    CommandHandler,
     MessageHandler,
     Filters,
     CallbackContext,
-    CommandHandler,
 )
+from io import BytesIO
 
 from modules.capa import CAPAInput, generate_capa_html
+
 
 # ===== STATES =====
 (
@@ -32,12 +32,14 @@ from modules.capa import CAPAInput, generate_capa_html
 ) = range(14)
 
 
-# ===== ENTRY COMMAND =====
+# ==========================================================
+# ENTRY POINT
+# ==========================================================
 def start_capa(update: Update, context: CallbackContext):
     update.message.reply_text(
         "🛡 *CAPA Generator*\n\n"
-        "Let's create a CAPA.\n"
-        "Enter *CAPA ID* (e.g., CAPA-001):",
+        "Let's create a Corrective & Preventive Action report.\n"
+        "Send *CAPA ID* (e.g., CAPA-001):",
         parse_mode="Markdown",
         reply_markup=ReplyKeyboardRemove(),
     )
@@ -45,7 +47,9 @@ def start_capa(update: Update, context: CallbackContext):
     return CAPA_ID
 
 
-# ===== QUESTION FLOW =====
+# ==========================================================
+# QUESTION FLOW
+# ==========================================================
 def capa_id(update, context):
     context.user_data["capa"]["capa_id"] = update.message.text.strip()
     update.message.reply_text("Enter *Date Initiated*:")
@@ -60,7 +64,7 @@ def capa_date(update, context):
 
 def capa_by(update, context):
     context.user_data["capa"]["initiated_by"] = update.message.text.strip()
-    update.message.reply_text("Enter *Source* (Deviation, Audit, Complaint, etc.):")
+    update.message.reply_text("Enter *Source* (Deviation / Audit / Complaint etc.):")
     return CAPA_SOURCE
 
 
@@ -131,7 +135,9 @@ def capa_effectiveness_criteria(update, context):
     return CAPA_EFFECTIVENESS_PLAN
 
 
-# ===== FINAL STEP =====
+# ==========================================================
+# FINAL STEP
+# ==========================================================
 def capa_effectiveness_plan(update, context):
     context.user_data["capa"]["effectiveness_check_plan"] = update.message.text.strip()
 
@@ -150,11 +156,13 @@ def capa_effectiveness_plan(update, context):
     return ConversationHandler.END
 
 
-# ===== CONVERSATION HANDLER =====
+# ==========================================================
+# CLEAN ENTRY POINTS (Regex + /command)
+# ==========================================================
 capa_conv = ConversationHandler(
     entry_points=[
         CommandHandler("capa", start_capa),
-        MessageHandler(Filters.regex(r"^🛡 CAPA$"), start_capa),
+        MessageHandler(Filters.regex(r"(?i)(capa|generate capa|capa report)"), start_capa),
     ],
     states={
         CAPA_ID: [MessageHandler(Filters.text & ~Filters.command, capa_id)],
@@ -162,25 +170,15 @@ capa_conv = ConversationHandler(
         CAPA_BY: [MessageHandler(Filters.text & ~Filters.command, capa_by)],
         CAPA_SOURCE: [MessageHandler(Filters.text & ~Filters.command, capa_source)],
         CAPA_PROBLEM: [MessageHandler(Filters.text & ~Filters.command, capa_problem)],
-        CAPA_ROOT_CAUSE: [
-            MessageHandler(Filters.text & ~Filters.command, capa_root_cause)
-        ],
+        CAPA_ROOT_CAUSE: [MessageHandler(Filters.text & ~Filters.command, capa_root_cause)],
         CAPA_TOOLS: [MessageHandler(Filters.text & ~Filters.command, capa_tools)],
-        CAPA_CONTAINMENT: [
-            MessageHandler(Filters.text & ~Filters.command, capa_containment)
-        ],
+        CAPA_CONTAINMENT: [MessageHandler(Filters.text & ~Filters.command, capa_containment)],
         CAPA_CA: [MessageHandler(Filters.text & ~Filters.command, capa_ca)],
         CAPA_PA: [MessageHandler(Filters.text & ~Filters.command, capa_pa)],
-        CAPA_RESPONSIBLE: [
-            MessageHandler(Filters.text & ~Filters.command, capa_responsible)
-        ],
-        CAPA_TARGET_DATE: [
-            MessageHandler(Filters.text & ~Filters.command, capa_target_date)
-        ],
+        CAPA_RESPONSIBLE: [MessageHandler(Filters.text & ~Filters.command, capa_responsible)],
+        CAPA_TARGET_DATE: [MessageHandler(Filters.text & ~Filters.command, capa_target_date)],
         CAPA_EFFECTIVENESS_CRITERIA: [
-            MessageHandler(
-                Filters.text & ~Filters.command, capa_effectiveness_criteria
-            )
+            MessageHandler(Filters.text & ~Filters.command, capa_effectiveness_criteria)
         ],
         CAPA_EFFECTIVENESS_PLAN: [
             MessageHandler(Filters.text & ~Filters.command, capa_effectiveness_plan)
